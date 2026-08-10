@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SwimActivity } from "@/lib/fit/types";
 import { encodeSwimFit, validateExport } from "@/lib/fit/encode";
 
@@ -7,6 +7,10 @@ export default function ExportButton({
   corrected, fileName,
 }: { corrected: SwimActivity | null; fileName: string }) {
   const [problems, setProblems] = useState<string[]>([]);
+
+  useEffect(() => {
+    setProblems([]);
+  }, [corrected, fileName]);
 
   const download = () => {
     if (!corrected) return;
