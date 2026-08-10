@@ -6,6 +6,7 @@ import Timeline from "@/components/Timeline";
 import HrChart from "@/components/HrChart";
 import LengthTable from "@/components/LengthTable";
 import ProposalsPanel from "@/components/ProposalsPanel";
+import ExportButton from "@/components/ExportButton";
 import { decodeSwimFit, FitDecodeError } from "@/lib/fit/decode";
 import type { SwimActivity } from "@/lib/fit/types";
 import { detectProposals, type Proposal, type EditOp } from "@/lib/analysis/detect";
@@ -97,7 +98,16 @@ export default function Home() {
         <Dropzone onBytes={onBytes} />
       ) : (
         <>
-          <p className="subtitle">{fileName}</p>
+          <p className="subtitle">
+            {fileName}{" "}
+            <button
+              className="action"
+              onClick={() => {
+                setActivity(null); setProposals([]); setAccepted(new Set());
+                setManualOps([]); setSelected(null); setError(null); setFileName("");
+              }}
+            >Start over</button>
+          </p>
           <SummaryTiles before={activity} after={corrected} />
           <ProposalsPanel
             proposals={proposals}
@@ -130,6 +140,7 @@ export default function Home() {
             onClearManual={() => setManualOps([])}
             manualTouched={manualTouched}
           />
+          <ExportButton corrected={corrected} fileName={fileName} />
         </>
       )}
     </main>
