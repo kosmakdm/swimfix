@@ -22,8 +22,8 @@ export function decodeSwimFit(bytes: Uint8Array): SwimActivity {
 
   const raw: RawMesg[] = [];
   const { messages, errors } = decoder.read({
-    mesgListener: (mesgNum: number, mesg: Record<string, unknown>) =>
-      raw.push({ mesgNum, mesg }),
+    mesgListener: (mesgNum: number, mesg: object) =>
+      raw.push({ mesgNum, mesg: mesg as Record<string, unknown> }),
   });
   if (errors.length > 0) {
     throw new FitDecodeError(
