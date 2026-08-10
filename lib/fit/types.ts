@@ -10,6 +10,7 @@ export interface LengthData {
   totalTimerTime: number;
   lengthType: "active" | "idle";
   totalStrokes?: number;
+  avgSpeed?: number;
   avgSwimmingCadence?: number;
   swimStroke?: SwimStroke;
   totalCalories?: number;

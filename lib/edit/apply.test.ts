@@ -35,6 +35,9 @@ describe("applyEdits on the real swim with the golden proposals", () => {
     expect(m.lengthType).toBe("active");
     expect(m.totalTimerTime).toBeCloseTo(96.249, 2);
     expect(m.startTime).toEqual(a.lengths[6].startTime);
+    // Garmin Connect plots per-length pace from avgSpeed — a merged length
+    // must carry it like every device-written active length does
+    expect(m.avgSpeed).toBeCloseTo(50 / 96.249, 3);
   });
 
   it("recomputes the affected laps", () => {
