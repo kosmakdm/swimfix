@@ -99,6 +99,13 @@ describe("detectProposals — synthetic cases", () => {
     const relabel = props.find((p) => p.op.type === "relabel");
     expect(relabel).toBeDefined();
     expect(relabel!.op).toMatchObject({ lengthIndex: 8, stroke: "freestyle" });
+    expect(relabel!.confidence).toBe("low");
+  });
+
+  it("merges a trailing fragment into its left neighbor", () => {
+    const a = synth([...NORMAL, { totalStrokes: 3, totalTimerTime: 4 }]);
+    const ids = detectProposals(a).map((p) => p.id);
+    expect(ids).toContain("merge:7-8");
   });
 });
 

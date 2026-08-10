@@ -101,7 +101,7 @@ export function detectProposals(
   while (i < a.lengths.length) {
     if (!fragments[i]) { i++; continue; }
     let j = i;
-    while (j + 1 < a.lengths.length && fragments[j + 1] && owner[j + 1] === owner[i]) j++;
+    while (j + 1 < a.lengths.length && fragments[j + 1] && owner[j + 1] === owner[i] && owner[i] !== -1) j++;
     const run = a.lengths.slice(i, j + 1);
 
     const tryCandidate = (idxs: number[]): Proposal | null => {
@@ -117,10 +117,10 @@ export function detectProposals(
       };
     };
 
-    const runIdxs = run.map((l) => a.lengths.indexOf(l));
-    const right = j + 1 < a.lengths.length && owner[j + 1] === owner[i] &&
+    const runIdxs = Array.from({ length: j - i + 1 }, (_, k) => i + k);
+    const right = j + 1 < a.lengths.length && owner[j + 1] === owner[i] && owner[i] !== -1 &&
       active(j + 1) && !fragments[j + 1] ? [...runIdxs, j + 1] : null;
-    const left = i - 1 >= 0 && owner[i - 1] === owner[i] &&
+    const left = i - 1 >= 0 && owner[i - 1] === owner[i] && owner[i] !== -1 &&
       active(i - 1) && !fragments[i - 1] ? [i - 1, ...runIdxs] : null;
 
     const prop =
@@ -141,7 +141,7 @@ export function detectProposals(
         reason: `Length${runIdxs.length > 1 ? "s" : ""} ${runIdxs.map((k) => k + 1).join(", ")} ` +
           `(${strokes} strokes) can't be combined into a plausible length — ` +
           `probably not real swimming. Converting to rest removes ` +
-          `${runIdxs.length * 1} counted length${runIdxs.length > 1 ? "s" : ""}.`,
+          `${runIdxs.length} counted length${runIdxs.length > 1 ? "s" : ""}.`,
       });
       runIdxs.forEach((k) => consumed.add(k));
     }
@@ -164,8 +164,9 @@ export function detectProposals(
       if (s) counts.set(s, (counts.get(s) ?? 0) + 1);
     }
     let majority: SwimStroke | undefined;
+    let maxCount = 0;
     for (const [s, c] of counts) {
-      if (c / idxs.length >= cfg.relabelMajority) majority = s;
+      if (c / idxs.length >= cfg.relabelMajority && c > maxCount) { majority = s; maxCount = c; }
     }
     if (!majority) return;
     const majStats = statsFor(b, majority, cfg.minGroupSamples);
