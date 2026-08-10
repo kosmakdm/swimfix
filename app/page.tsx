@@ -1,0 +1,156 @@
+"use client";
+import { useMemo, useState } from "react";
+import Dropzone from "@/components/Dropzone";
+import SummaryTiles from "@/components/SummaryTiles";
+import Timeline from "@/components/Timeline";
+import HrChart from "@/components/HrChart";
+import LengthTable from "@/components/LengthTable";
+import ProposalsPanel from "@/components/ProposalsPanel";
+import ExportButton from "@/components/ExportButton";
+import { decodeSwimFit, FitDecodeError } from "@/lib/fit/decode";
+import type { SwimActivity } from "@/lib/fit/types";
+import { detectProposals, type Proposal, type EditOp } from "@/lib/analysis/detect";
+import { applyEdits, lengthsTouched, EditConflictError } from "@/lib/edit/apply";
+
+export default function Home() {
+  const [activity, setActivity] = useState<SwimActivity | null>(null);
+  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [accepted, setAccepted] = useState<Set<string>>(new Set());
+  const [manualOps, setManualOps] = useState<EditOp[]>([]);
+
+  const onBytes = (bytes: Uint8Array, name: string) => {
+    setError(null);
+    try {
+      const a = decodeSwimFit(bytes);
+      setActivity(a);
+      setFileName(name);
+      const props = detectProposals(a);
+      setProposals(props);
+      setAccepted(new Set(props.map((p) => p.id)));
+      setManualOps([]);
+      setSelected(null);
+    } catch (e) {
+      setActivity(null);
+      setError(e instanceof FitDecodeError ? e.message : "Unexpected error reading the file.");
+    }
+  };
+
+  const activeOps = useMemo<EditOp[]>(
+    () => [
+      ...proposals.filter((p) => accepted.has(p.id)).map((p) => p.op),
+      ...manualOps,
+    ],
+    [proposals, accepted, manualOps],
+  );
+
+  const { corrected, editConflict } = useMemo(() => {
+    if (!activity || activeOps.length === 0) return { corrected: null, editConflict: null };
+    try {
+      return { corrected: applyEdits(activity, activeOps), editConflict: null };
+    } catch (e) {
+      // A proposal/manual-op combo that reaches an invalid state (e.g. a
+      // stray single-length merge) must never silently blank the before/
+      // after totals — surface it in the error banner instead.
+      return {
+        corrected: null,
+        editConflict: e instanceof EditConflictError
+          ? e.message
+          : "Could not apply the selected edits.",
+      };
+    }
+  }, [activity, activeOps]);
+
+  const flagged = useMemo(
+    () => new Set(proposals.flatMap((p) => lengthsTouched(p.op))),
+    [proposals],
+  );
+
+  const manualTouched = useMemo(
+    () => new Set(manualOps.flatMap(lengthsTouched)),
+    [manualOps],
+  );
+  const disabledProposals = useMemo(
+    () => new Set(
+      proposals
+        .filter((p) => lengthsTouched(p.op).some((i) => manualTouched.has(i)))
+        .map((p) => p.id),
+    ),
+    [proposals, manualTouched],
+  );
+
+  const blocked = useMemo(
+    () => new Set(
+      proposals.filter((p) => accepted.has(p.id)).flatMap((p) => lengthsTouched(p.op)),
+    ),
+    [proposals, accepted],
+  );
+
+  const onManualOp = (op: EditOp) => {
+    const touched = lengthsTouched(op);
+    if (touched.some((i) => blocked.has(i) || manualTouched.has(i))) return;
+    setManualOps((prev) => [...prev, op]);
+    setSelected(null);
+  };
+
+  return (
+    <main>
+      <h1>SwimFix</h1>
+      <p className="subtitle">
+        Find and fix phantom lengths in Garmin pool-swim FIT files — entirely in your browser.
+      </p>
+      {error || editConflict ? <div className="error">{error ?? editConflict}</div> : null}
+      {!activity ? (
+        <Dropzone onBytes={onBytes} />
+      ) : (
+        <>
+          <p className="subtitle">
+            {fileName}{" "}
+            <button
+              className="action"
+              onClick={() => {
+                setActivity(null); setProposals([]); setAccepted(new Set());
+                setManualOps([]); setSelected(null); setError(null); setFileName("");
+              }}
+            >Start over</button>
+          </p>
+          <SummaryTiles before={activity} after={corrected} />
+          <ProposalsPanel
+            proposals={proposals}
+            accepted={accepted}
+            disabled={disabledProposals}
+            onToggle={(id) =>
+              setAccepted((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              })
+            }
+          />
+          <Timeline
+            activity={activity}
+            flagged={flagged}
+            selected={selected}
+            onSelect={setSelected}
+          />
+          <HrChart activity={activity} />
+          <LengthTable
+            activity={activity}
+            flagged={flagged}
+            blocked={blocked}
+            selected={selected}
+            onSelect={setSelected}
+            onManualOp={onManualOp}
+            manualOps={manualOps}
+            onClearManual={() => setManualOps([])}
+            manualTouched={manualTouched}
+          />
+          <ExportButton corrected={corrected} fileName={fileName} />
+        </>
+      )}
+    </main>
+  );
+}
