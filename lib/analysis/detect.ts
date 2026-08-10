@@ -55,8 +55,8 @@ function candidateFit(
   const seconds = members.reduce((s, m) => s + m.totalTimerTime, 0);
   const within = (v: number, med: number, sd: number, k: number) =>
     Math.abs(v - med) <= k * sd;
-  const sSd = sigma(stats.strokes);
-  const tSd = sigma(stats.seconds);
+  const sSd = Math.max(sigma(stats.strokes), cfg.minStrokeSigma);
+  const tSd = Math.max(sigma(stats.seconds), cfg.minSecondsSigma);
   const fits =
     within(strokes, stats.strokes.median, sSd, cfg.mergeBandSigmas) &&
     within(seconds, stats.seconds.median, tSd, cfg.mergeBandSigmas);
@@ -123,8 +123,12 @@ export function detectProposals(
     const left = i - 1 >= 0 && owner[i - 1] === owner[i] && owner[i] !== -1 &&
       active(i - 1) && !fragments[i - 1] ? [i - 1, ...runIdxs] : null;
 
+    // A lone fragment (run of exactly one) can never be a valid merge on its
+    // own — applyEdits requires ≥2 consecutive lengths — so only try the
+    // run-alone candidate when it actually has ≥2 members. A single fragment
+    // must fall through to a right/left extension, or toRest.
     const prop =
-      tryCandidate(runIdxs) ??
+      (runIdxs.length >= 2 ? tryCandidate(runIdxs) : null) ??
       (right ? tryCandidate(right) : null) ??
       (left ? tryCandidate(left) : null);
 
@@ -174,7 +178,8 @@ export function detectProposals(
       const l = a.lengths[k];
       if (!l.swimStroke || l.swimStroke === majority) continue;
       const dev = Math.abs((l.totalStrokes ?? 0) - majStats.strokes.median);
-      if (dev > cfg.highConfidenceSigmas * sigma(majStats.strokes)) continue;
+      const majSd = Math.max(sigma(majStats.strokes), cfg.minStrokeSigma);
+      if (dev > cfg.highConfidenceSigmas * majSd) continue;
       const own = b.byStroke.get(l.swimStroke);
       const hasOwnBaseline = !!own && own.strokes.n >= cfg.minGroupSamples;
       const op: EditOp = { type: "relabel", lengthIndex: k, stroke: majority };

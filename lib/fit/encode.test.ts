@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import { decodeSwimFit } from "./decode";
 import { encodeSwimFit, validateExport } from "./encode";
 import { applyEdits } from "../edit/apply";
+import type { SwimActivity } from "./types";
 
 const bytes = new Uint8Array(
   fs.readFileSync(new URL("../../test/fixtures/sample-swim.fit", import.meta.url)),
@@ -53,6 +54,28 @@ describe("encodeSwimFit with edits", () => {
 
   it("passes validateExport against the edited model", () => {
     expect(validateExport(encoded, edited).ok).toBe(true);
+  });
+});
+
+describe("encodeSwimFit with a non-metric (yard) pool length", () => {
+  const a = decodeSwimFit(bytes);
+  // 22.86 m/yd-pool is the classic float-noise generator: 22 × 22.86 =
+  // 502.91999999999996 in raw JS arithmetic — and 22 is exactly the active
+  // length count the golden ops leave behind, so this reproduces the bug
+  // precisely as reported rather than by coincidence.
+  const yardActivity: SwimActivity = { ...a, session: { ...a.session, poolLength: 22.86 } };
+  const edited = applyEdits(yardActivity, [
+    { type: "merge", lengthIndexes: [6, 7, 8] },
+    { type: "merge", lengthIndexes: [18, 19] },
+    { type: "merge", lengthIndexes: [20, 21] },
+  ]);
+  const encoded = encodeSwimFit(edited);
+
+  it("does not spuriously block export on binary floating-point distance noise", () => {
+    expect(edited.session.numActiveLengths).toBe(22);
+    expect(edited.session.totalDistance).toBe(502.92); // not 502.91999999999996
+    const v = validateExport(encoded, edited);
+    expect(v).toEqual({ ok: true, problems: [] });
   });
 });
 

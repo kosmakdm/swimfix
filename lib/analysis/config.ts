@@ -13,6 +13,10 @@ export interface DetectConfig {
   relabelMajority: number;
   /** Minimum non-fragment actives in a lap before relabel logic applies. */
   minLapActives: number;
+  /** Floor for stroke-count σ so metronomic swimmers never get a zero-width band. */
+  minStrokeSigma: number;
+  /** Floor for duration σ (seconds), same reason. */
+  minSecondsSigma: number;
 }
 
 export const DEFAULT_CONFIG: DetectConfig = {
@@ -23,4 +27,6 @@ export const DEFAULT_CONFIG: DetectConfig = {
   toRestStrokeRatio: 0.3,
   relabelMajority: 2 / 3,
   minLapActives: 3,
+  minStrokeSigma: 1,
+  minSecondsSigma: 2,
 };

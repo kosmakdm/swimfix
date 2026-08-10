@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import { decodeSwimFit } from "../fit/decode";
 import { applyEdits, EditConflictError, lengthsTouched } from "./apply";
 import type { EditOp } from "../analysis/detect";
+import type { SwimActivity } from "../fit/types";
 
 const bytes = new Uint8Array(
   fs.readFileSync(new URL("../../test/fixtures/sample-swim.fit", import.meta.url)),
@@ -56,6 +57,7 @@ describe("applyEdits on the real swim with the golden proposals", () => {
     expect(out.session.numActiveLengths).toBe(22);
     expect(out.session.totalStrokes).toBe(731);     // strokes conserved by merges
     expect(out.session.totalTimerTime).toBeCloseTo(2695.631, 2); // time untouched
+    expect(out.session.numLengths).toBe(23);         // 27 - 4 length messages removed
   });
 
   it("keeps raw messages for re-encoding", () => {
@@ -103,5 +105,55 @@ describe("applyEdits — other ops and validation", () => {
   it("lengthsTouched reports indexes for the UI", () => {
     expect(lengthsTouched({ type: "merge", lengthIndexes: [6, 7, 8] })).toEqual([6, 7, 8]);
     expect(lengthsTouched({ type: "relabel", lengthIndex: 3, stroke: "drill" })).toEqual([3]);
+  });
+});
+
+describe("applyEdits — yard-pool distance rounding", () => {
+  const a = decodeSwimFit(bytes);
+  // Shallow-modified activity: a non-metric pool length (yards-in-meters,
+  // 22.86) whose products with integer length counts are classic binary
+  // floating-point noise generators — e.g. 22 × 22.86 = 502.91999999999996
+  // in raw JS arithmetic, which is exactly the active-length count the
+  // golden ops leave behind (verified: 22 * 22.86 !== 502.92 without
+  // rounding).
+  const yardActivity: SwimActivity = { ...a, session: { ...a.session, poolLength: 22.86 } };
+
+  it("keeps lap and session totalDistance at exact 2-decimal precision", () => {
+    const out = applyEdits(yardActivity, GOLDEN_OPS);
+    expect(out.session.numActiveLengths).toBe(22); // the exact float-noise case: 22 × 22.86
+
+    // Without rounding this would be 502.91999999999996, not 502.92.
+    expect(out.session.totalDistance).toBe(502.92);
+
+    // Number.isInteger(v * 100) is true only for values with no more than
+    // 2 decimal digits of precision (modulo float representation, which
+    // Math.round(v*100)/100 guarantees here).
+    expect(Number.isInteger(out.session.totalDistance! * 100)).toBe(true);
+    for (const lap of out.laps) {
+      if (lap.totalDistance === undefined) continue;
+      expect(Number.isInteger(lap.totalDistance * 100)).toBe(true);
+    }
+
+    // Cross-check against the manually rounded expectation the FIT round
+    // trip (round(v*100)/100) would itself produce.
+    const expectedSessionDistance = Math.round(out.session.numActiveLengths! * 22.86 * 100) / 100;
+    expect(out.session.totalDistance).toBeCloseTo(expectedSessionDistance, 10);
+
+    const lap4Actives = out.laps[4].numActiveLengths!;
+    const expectedLap4Distance = Math.round(lap4Actives * 22.86 * 100) / 100;
+    expect(out.laps[4].totalDistance).toBeCloseTo(expectedLap4Distance, 10);
+  });
+});
+
+describe("applyEdits — numLengths passthrough", () => {
+  const a = decodeSwimFit(bytes);
+
+  it("leaves session.numLengths untouched when the source doesn't carry a numeric field", () => {
+    const noNumLengths: SwimActivity = {
+      ...a,
+      session: { ...a.session, numLengths: undefined },
+    };
+    const out = applyEdits(noNumLengths, [{ type: "toRest", lengthIndexes: [6] }]);
+    expect(out.session.numLengths).toBeUndefined();
   });
 });

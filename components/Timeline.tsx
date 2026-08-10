@@ -1,12 +1,22 @@
 "use client";
 import { useMemo, useState } from "react";
-import type { SwimActivity } from "@/lib/fit/types";
+import type { LengthData, SwimActivity } from "@/lib/fit/types";
 import { FLAG_COLOR, REST_COLOR, STROKE_COLOR } from "@/lib/ui/strokeColors";
 import { fmtClock, fmtDur } from "@/lib/ui/format";
+import { pickBar } from "@/lib/ui/pickBar";
 import ChartTooltip, { type TooltipState } from "./ChartTooltip";
 
 const W = 1000;
 const H = 64;
+
+interface Bar {
+  i: number;
+  x0: number;
+  x1: number;
+  rest: boolean;
+  color: string;
+  length: LengthData;
+}
 
 export default function Timeline({
   activity, flagged, selected, onSelect,
@@ -21,7 +31,7 @@ export default function Timeline({
   const total = activity.session.totalElapsedTime;
   const x = (sec: number) => ((sec - t0) / total) * W;
 
-  const bars = useMemo(() => activity.lengths.map((l, i) => {
+  const bars: Bar[] = useMemo(() => activity.lengths.map((l, i) => {
     const start = l.startTime.getTime() / 1000;
     return {
       i,
@@ -39,12 +49,11 @@ export default function Timeline({
       .map((l) => l.swimStroke as string),
   )];
 
-  const hover = (clientX: number, clientY: number, target: SVGSVGElement) => {
+  const hover = (clientX: number, clientY: number, target: SVGSVGElement): number | null => {
     const rect = target.getBoundingClientRect();
     const px = ((clientX - rect.left) / rect.width) * W;
-    const bar = bars.find((b) => px >= b.x0 && px < b.x1) ??
-      bars.reduce((best, b) =>
-        Math.abs((b.x0 + b.x1) / 2 - px) < Math.abs((best.x0 + best.x1) / 2 - px) ? b : best);
+    const bar = pickBar(bars, px);
+    if (!bar) return null;
     const l = bar.length;
     setTip({
       x: clientX - rect.left,
@@ -72,7 +81,10 @@ export default function Timeline({
           aria-label="Timeline of pool lengths; details in the table below"
           onMouseMove={(e) => hover(e.clientX, e.clientY, e.currentTarget)}
           onMouseLeave={() => setTip(null)}
-          onClick={(e) => onSelect(hover(e.clientX, e.clientY, e.currentTarget))}
+          onClick={(e) => {
+            const idx = hover(e.clientX, e.clientY, e.currentTarget);
+            if (idx !== null) onSelect(idx);
+          }}
         >
           {bars.map((b) => (
             <g key={b.i}>

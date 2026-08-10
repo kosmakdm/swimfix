@@ -107,6 +107,62 @@ describe("detectProposals — synthetic cases", () => {
     const ids = detectProposals(a).map((p) => p.id);
     expect(ids).toContain("merge:7-8");
   });
+
+  it("never proposes a single-index merge, even when a noisy baseline lets a lone fragment fit the band alone", () => {
+    // Two widely separated stroke/second clusters give a huge robust MAD (and
+    // thus a huge σ) — wide enough that an isolated low-stroke fragment can
+    // satisfy the ±3σ merge band all by itself. It's still classified a
+    // "fragment" (well under fragmentStrokeRatio × median), and its run is
+    // exactly one length long (neither neighbor is a fragment). Before the
+    // fix, candidate A (the run-alone candidate) would have accepted this and
+    // emitted `merge:4` — a single-index merge that applyEdits rejects
+    // outright ("A merge needs at least two lengths"). It must instead fall
+    // through to a right/left extension (or toRest).
+    const a = synth([
+      { totalStrokes: 100, totalTimerTime: 200 },
+      { totalStrokes: 100, totalTimerTime: 200 },
+      { totalStrokes: 100, totalTimerTime: 200 },
+      { totalStrokes: 100, totalTimerTime: 200 },
+      { totalStrokes: 30, totalTimerTime: 60 }, // lone fragment, index 4
+      { totalStrokes: 200, totalTimerTime: 400 },
+      { totalStrokes: 200, totalTimerTime: 400 },
+      { totalStrokes: 200, totalTimerTime: 400 },
+      { totalStrokes: 200, totalTimerTime: 400 },
+    ]);
+    const props = detectProposals(a);
+
+    for (const p of props) {
+      if (p.op.type !== "merge") continue;
+      expect(p.op.lengthIndexes.length).toBeGreaterThanOrEqual(2);
+      for (let k = 1; k < p.op.lengthIndexes.length; k++) {
+        expect(p.op.lengthIndexes[k]).toBe(p.op.lengthIndexes[k - 1] + 1);
+      }
+    }
+
+    // sanity: the fragment at index 4 was in fact exercised by the fix path
+    // (proves the assertions above aren't vacuously true over an empty list)
+    const touchesFragment = props.some((p) =>
+      p.op.type === "relabel" ? p.op.lengthIndex === 4 : p.op.lengthIndexes.includes(4),
+    );
+    expect(touchesFragment).toBe(true);
+  });
+
+  it("applies the σ floor so a metronomic baseline (zero MAD) still merges a near-median fragment pair", () => {
+    // 8 identical lengths give a robust MAD of exactly 0 for both strokes
+    // and seconds, i.e. sigma() alone would be 0 — a zero-width merge band
+    // that only an exact-median sum could ever satisfy. Two fragments
+    // summing to 31 strokes / 81 s (1 off the 30/80 median in both) must
+    // still merge thanks to the minStrokeSigma/minSecondsSigma floors.
+    const metronomic = Array.from({ length: 8 }, () => ({ totalStrokes: 30, totalTimerTime: 80 }));
+    const a = synth([
+      ...metronomic,
+      { totalStrokes: 14, totalTimerTime: 38 },
+      { totalStrokes: 17, totalTimerTime: 43 },
+    ]);
+    const props = detectProposals(a);
+    expect(props.map((p) => p.id)).toEqual(["merge:8-9"]);
+    expect(props[0].confidence).toBe("high");
+  });
 });
 
 describe("detectProposals — golden test on the real swim", () => {

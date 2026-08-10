@@ -10,7 +10,7 @@ import ExportButton from "@/components/ExportButton";
 import { decodeSwimFit, FitDecodeError } from "@/lib/fit/decode";
 import type { SwimActivity } from "@/lib/fit/types";
 import { detectProposals, type Proposal, type EditOp } from "@/lib/analysis/detect";
-import { applyEdits, lengthsTouched } from "@/lib/edit/apply";
+import { applyEdits, lengthsTouched, EditConflictError } from "@/lib/edit/apply";
 
 export default function Home() {
   const [activity, setActivity] = useState<SwimActivity | null>(null);
@@ -46,12 +46,20 @@ export default function Home() {
     [proposals, accepted, manualOps],
   );
 
-  const corrected = useMemo(() => {
-    if (!activity || activeOps.length === 0) return null;
+  const { corrected, editConflict } = useMemo(() => {
+    if (!activity || activeOps.length === 0) return { corrected: null, editConflict: null };
     try {
-      return applyEdits(activity, activeOps);
-    } catch {
-      return null;
+      return { corrected: applyEdits(activity, activeOps), editConflict: null };
+    } catch (e) {
+      // A proposal/manual-op combo that reaches an invalid state (e.g. a
+      // stray single-length merge) must never silently blank the before/
+      // after totals — surface it in the error banner instead.
+      return {
+        corrected: null,
+        editConflict: e instanceof EditConflictError
+          ? e.message
+          : "Could not apply the selected edits.",
+      };
     }
   }, [activity, activeOps]);
 
@@ -93,7 +101,7 @@ export default function Home() {
       <p className="subtitle">
         Find and fix phantom lengths in Garmin pool-swim FIT files — entirely in your browser.
       </p>
-      {error ? <div className="error">{error}</div> : null}
+      {error || editConflict ? <div className="error">{error ?? editConflict}</div> : null}
       {!activity ? (
         <Dropzone onBytes={onBytes} />
       ) : (

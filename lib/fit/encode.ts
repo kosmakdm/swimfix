@@ -48,9 +48,20 @@ export function validateExport(bytes: Uint8Array, expected: SwimActivity): Expor
   const check = (label: string, got: unknown, want: unknown) => {
     if (got !== want) problems.push(`${label}: expected ${String(want)}, got ${String(got)}`);
   };
+  // Distances are floats derived from poolLength × count; the FIT round trip
+  // settles on round(v*100)/100, so compare with a tolerance instead of
+  // strict equality to avoid flagging harmless binary floating-point noise
+  // (e.g. 22 × 22.86 = 502.91999999999996) as a mismatch.
+  const checkClose = (label: string, got: unknown, want: unknown, tolerance: number) => {
+    const g = typeof got === "number" ? got : NaN;
+    const w = typeof want === "number" ? want : NaN;
+    if (Number.isNaN(g) || Number.isNaN(w) || Math.abs(g - w) > tolerance) {
+      problems.push(`${label}: expected ${String(want)}, got ${String(got)}`);
+    }
+  };
   check("length count", back.lengths.length, expected.lengths.length);
   check("lap count", back.laps.length, expected.laps.length);
-  check("session distance", back.session.totalDistance, expected.session.totalDistance);
+  checkClose("session distance", back.session.totalDistance, expected.session.totalDistance, 0.005);
   check("active lengths", back.session.numActiveLengths, expected.session.numActiveLengths);
   back.lengths.forEach((l, i) => {
     if (l.messageIndex !== i) problems.push(`length ${i} has messageIndex ${l.messageIndex}`);

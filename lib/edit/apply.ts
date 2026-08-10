@@ -8,6 +8,15 @@ export class EditConflictError extends Error {
   }
 }
 
+/** Round a computed distance to hundredths, matching the precision the FIT
+ *  round trip settles on (round(v*100)/100). Raw float products of a pool
+ *  length and a length count (e.g. 22 × 22.86 m) otherwise carry binary
+ *  floating-point noise (502.91999999999996) that a strict-equality re-check
+ *  against the decoded, rounded value would spuriously reject. */
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
 export function lengthsTouched(op: EditOp): number[] {
   return op.type === "relabel" ? [op.lengthIndex] : [...op.lengthIndexes];
 }
@@ -149,7 +158,7 @@ export function applyEdits(a: SwimActivity, ops: EditOp[]): SwimActivity {
     const owned = newIdxs.map((i) => newLengths[i]);
     const actives = owned.filter((l) => l.lengthType === "active");
     const strokes = actives.reduce((s, l) => s + (l.totalStrokes ?? 0), 0);
-    const distance = actives.length * poolLength;
+    const distance = round2(actives.length * poolLength);
     const out: LapData = {
       ...lap,
       firstLengthIndex: newIdxs[0] ?? oldToNew[first] ?? first,
@@ -170,7 +179,9 @@ export function applyEdits(a: SwimActivity, ops: EditOp[]): SwimActivity {
 
   const allActives = newLengths.filter((l) => l.lengthType === "active");
   const totalStrokes = allActives.reduce((s, l) => s + (l.totalStrokes ?? 0), 0);
-  const totalDistance = allActives.length * poolLength;
+  const totalDistance = round2(allActives.length * poolLength);
+  const removedLengths = a.lengths.length - newLengths.length;
+  const prevNumLengths = a.session.numLengths;
   const session = {
     ...a.session,
     totalDistance,
@@ -180,6 +191,9 @@ export function applyEdits(a: SwimActivity, ops: EditOp[]): SwimActivity {
     avgStrokeDistance: totalStrokes > 0 ? totalDistance / totalStrokes : 0,
     enhancedAvgSpeed: a.session.totalTimerTime > 0
       ? totalDistance / a.session.totalTimerTime : 0,
+    ...(typeof prevNumLengths === "number"
+      ? { numLengths: prevNumLengths - removedLengths }
+      : {}),
   };
 
   return { session, laps: newLaps, lengths: newLengths, hr: a.hr, raw: a.raw };
