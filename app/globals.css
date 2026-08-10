@@ -108,6 +108,8 @@ h1 { font-size: 20px; margin: 0 0 4px; }
 .legend .key { display: inline-flex; align-items: center; gap: 5px; }
 .legend .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .legend .line-key { width: 14px; height: 2px; display: inline-block; }
+.key { display: inline-flex; align-items: center; gap: 5px; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 
 .proposal { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--grid); }
 .proposal:first-of-type { border-top: none; }

@@ -4,6 +4,7 @@ import Dropzone from "@/components/Dropzone";
 import SummaryTiles from "@/components/SummaryTiles";
 import Timeline from "@/components/Timeline";
 import HrChart from "@/components/HrChart";
+import LengthTable from "@/components/LengthTable";
 import ProposalsPanel from "@/components/ProposalsPanel";
 import { decodeSwimFit, FitDecodeError } from "@/lib/fit/decode";
 import type { SwimActivity } from "@/lib/fit/types";
@@ -71,6 +72,20 @@ export default function Home() {
     [proposals, manualTouched],
   );
 
+  const blocked = useMemo(
+    () => new Set(
+      proposals.filter((p) => accepted.has(p.id)).flatMap((p) => lengthsTouched(p.op)),
+    ),
+    [proposals, accepted],
+  );
+
+  const onManualOp = (op: EditOp) => {
+    const touched = lengthsTouched(op);
+    if (touched.some((i) => blocked.has(i) || manualTouched.has(i))) return;
+    setManualOps((prev) => [...prev, op]);
+    setSelected(null);
+  };
+
   return (
     <main>
       <h1>SwimFix</h1>
@@ -104,6 +119,16 @@ export default function Home() {
             onSelect={setSelected}
           />
           <HrChart activity={activity} />
+          <LengthTable
+            activity={activity}
+            flagged={flagged}
+            blocked={blocked}
+            selected={selected}
+            onSelect={setSelected}
+            onManualOp={onManualOp}
+            manualOps={manualOps}
+            onClearManual={() => setManualOps([])}
+          />
         </>
       )}
     </main>
