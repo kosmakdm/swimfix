@@ -52,6 +52,25 @@ describe("encodeSwimFit with edits", () => {
     back.lengths.forEach((l, i) => expect(l.messageIndex).toBe(i));
   });
 
+  it("every active length in the corrected file carries avgSpeed (GC pace chart)", () => {
+    const actives = back.lengths.filter((l) => l.lengthType === "active");
+    expect(actives.length).toBeGreaterThan(0);
+    for (const l of actives) {
+      expect(l.avgSpeed).toBeGreaterThan(0);
+    }
+  });
+
+  it("merged lengths round-trip unscrambled (encoder definition-reuse hazard)", () => {
+    // If the merged object's key order diverges from the device definition,
+    // the SDK encoder writes values into the wrong fields; assert exact values.
+    const m = back.lengths[6];
+    expect(m.totalStrokes).toBe(37);
+    expect(m.avgSpeed).toBeCloseTo(50 / 96.249, 3);
+    expect(m.totalTimerTime).toBeCloseTo(96.249, 2);
+    expect(m.swimStroke).toBe("freestyle");
+    expect(m.startTime).toEqual(edited.lengths[6].startTime);
+  });
+
   it("passes validateExport against the edited model", () => {
     expect(validateExport(encoded, edited).ok).toBe(true);
   });

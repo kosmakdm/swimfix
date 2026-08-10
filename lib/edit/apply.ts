@@ -62,7 +62,7 @@ function validate(a: SwimActivity, ops: EditOp[]): void {
   }
 }
 
-function mergedLength(members: LengthData[]): LengthData {
+function mergedLength(members: LengthData[], poolLength: number): LengthData {
   const strokes = members.reduce((s, m) => s + (m.totalStrokes ?? 0), 0);
   const timer = members.reduce((s, m) => s + m.totalTimerTime, 0);
   const elapsed = members.reduce((s, m) => s + m.totalElapsedTime, 0);
@@ -78,21 +78,23 @@ function mergedLength(members: LengthData[]): LengthData {
   let stroke: SwimStroke | undefined;
   let best = -1;
   for (const [s, sum] of bySummedStrokes) if (sum > best) { stroke = s; best = sum; }
+  // Spread members[0] (a device-written length) so the merged object keeps the
+  // device's exact field set AND key order. The FIT SDK Encoder reuses its
+  // cached field definition when a message's field-name set matches the
+  // previous one of that type, but writes values in OBJECT KEY ORDER — a
+  // same-set/different-order object silently scrambles every field on decode.
   return {
-    messageIndex: members[0].messageIndex, // reassigned below
-    timestamp: members[0].timestamp,
-    startTime: members[0].startTime,
+    ...members[0],
     totalElapsedTime: elapsed,
     totalTimerTime: timer,
     lengthType: "active",
     totalStrokes: strokes,
+    avgSpeed: timer > 0 ? Math.round((poolLength / timer) * 1000) / 1000 : undefined,
     avgSwimmingCadence: timer > 0 ? Math.round(strokes / (timer / 60)) : undefined,
     swimStroke: stroke,
     totalCalories: calDefined.length
       ? calDefined.reduce((s, m) => s + (m.totalCalories ?? 0), 0)
       : undefined,
-    event: members[0].event,
-    eventType: members[0].eventType,
   };
 }
 
@@ -124,7 +126,7 @@ export function applyEdits(a: SwimActivity, ops: EditOp[]): SwimActivity {
     let next: LengthData;
     const members = mergeStart.get(oldIdx);
     if (members) {
-      next = mergedLength(members.map((i) => a.lengths[i]));
+      next = mergedLength(members.map((i) => a.lengths[i]), a.session.poolLength);
     } else if (toRest.has(oldIdx)) {
       next = { ...l, lengthType: "idle" };
       delete next.totalStrokes;
