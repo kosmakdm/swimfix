@@ -2,6 +2,8 @@
 import { useState } from "react";
 import Dropzone from "@/components/Dropzone";
 import SummaryTiles from "@/components/SummaryTiles";
+import Timeline from "@/components/Timeline";
+import HrChart from "@/components/HrChart";
 import { decodeSwimFit, FitDecodeError } from "@/lib/fit/decode";
 import type { SwimActivity } from "@/lib/fit/types";
 
@@ -9,6 +11,7 @@ export default function Home() {
   const [activity, setActivity] = useState<SwimActivity | null>(null);
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
 
   const onBytes = (bytes: Uint8Array, name: string) => {
     setError(null);
@@ -34,6 +37,13 @@ export default function Home() {
         <>
           <p className="subtitle">{fileName}</p>
           <SummaryTiles before={activity} after={null} />
+          <Timeline
+            activity={activity}
+            flagged={new Set<number>()}
+            selected={selected}
+            onSelect={setSelected}
+          />
+          <HrChart activity={activity} />
         </>
       )}
     </main>
