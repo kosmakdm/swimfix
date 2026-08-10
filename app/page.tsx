@@ -128,6 +128,7 @@ export default function Home() {
             onManualOp={onManualOp}
             manualOps={manualOps}
             onClearManual={() => setManualOps([])}
+            manualTouched={manualTouched}
           />
         </>
       )}
