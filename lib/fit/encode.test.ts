@@ -98,6 +98,20 @@ describe("encodeSwimFit with a non-metric (yard) pool length", () => {
   });
 });
 
+describe("devices that emit vendor-only messages (e.g. Venu 3S training_settings)", () => {
+  it("skips raw messages that decoded to an empty object instead of crashing", () => {
+    const a = decodeSwimFit(bytes);
+    // A message whose fields are all unknown to the SDK profile decodes to {};
+    // Encoder.onMesg(num, {}) throws "Could not write Message".
+    const withEmpty = {
+      ...a,
+      raw: [...a.raw.slice(0, 36), { mesgNum: 13, mesg: {} }, ...a.raw.slice(36)],
+    };
+    const encoded = encodeSwimFit(withEmpty);
+    expect(validateExport(encoded, withEmpty)).toEqual({ ok: true, problems: [] });
+  });
+});
+
 describe("validateExport failure modes", () => {
   const a = decodeSwimFit(bytes);
 
