@@ -23,6 +23,11 @@ export function encodeSwimFit(a: SwimActivity): Uint8Array {
       }
       continue;
     }
+    // Some devices (e.g. Venu 3S training_settings) write messages whose
+    // fields are all vendor-proprietary; they decode to {} and the Encoder
+    // throws on a message with nothing to write. They carry no decodable
+    // data, so dropping them loses nothing.
+    if (Object.keys(mesg).length === 0) continue;
     encoder.onMesg(mesgNum, mesg);
   }
   return encoder.close();
