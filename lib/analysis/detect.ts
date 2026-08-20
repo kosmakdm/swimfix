@@ -7,7 +7,8 @@ export type Confidence = "high" | "medium" | "low";
 export type EditOp =
   | { type: "merge"; lengthIndexes: number[] }
   | { type: "toRest"; lengthIndexes: number[] }
-  | { type: "relabel"; lengthIndex: number; stroke: SwimStroke };
+  | { type: "relabel"; lengthIndex: number; stroke: SwimStroke }
+  | { type: "split"; lengthIndex: number; parts: number };
 
 export interface Proposal {
   id: string;
@@ -17,7 +18,7 @@ export interface Proposal {
 }
 
 export function opId(op: EditOp): string {
-  if (op.type === "relabel") return `relabel:${op.lengthIndex}`;
+  if (op.type === "relabel" || op.type === "split") return `${op.type}:${op.lengthIndex}`;
   return `${op.type}:${op.lengthIndexes.join("-")}`;
 }
 
@@ -152,6 +153,38 @@ export function detectProposals(
     i = j + 1;
   }
 
+  // --- split pass (missed turns) -------------------------------------------
+  a.lengths.forEach((l, idx) => {
+    if (l.lengthType !== "active" || consumed.has(idx) || fragments[idx]) return;
+    const stats = statsFor(b, l.swimStroke, cfg.minGroupSamples);
+    const sMed = stats.strokes.median;
+    const tMed = stats.seconds.median;
+    if (sMed <= 0 || tMed <= 0) return;
+    const strokes = l.totalStrokes ?? 0;
+    if (strokes < cfg.splitRatio * sMed || l.totalTimerTime < cfg.splitRatio * tMed) return;
+    const parts = Math.max(2, Math.round(strokes / sMed));
+    const sSd = Math.max(sigma(stats.strokes), cfg.minStrokeSigma);
+    const tSd = Math.max(sigma(stats.seconds), cfg.minSecondsSigma);
+    const within = (v: number, med: number, sd: number, k: number) =>
+      Math.abs(v - med) <= k * sd;
+    const perStrokes = strokes / parts;
+    const perSeconds = l.totalTimerTime / parts;
+    if (!within(perStrokes, sMed, sSd, cfg.mergeBandSigmas) ||
+        !within(perSeconds, tMed, tSd, cfg.mergeBandSigmas)) return;
+    const tight = within(perStrokes, sMed, sSd, cfg.highConfidenceSigmas) &&
+      within(perSeconds, tMed, tSd, cfg.highConfidenceSigmas);
+    const op: EditOp = { type: "split", lengthIndex: idx, parts };
+    proposals.push({
+      id: opId(op), op,
+      confidence: tight ? "high" : "medium",
+      reason: `Length ${idx + 1} looks like ${parts} lengths recorded as one ` +
+        `(missed turn): ${strokes} strokes in ${Math.round(l.totalTimerTime)}s — ` +
+        `your typical ${l.swimStroke ?? "swim"} length is ${Math.round(sMed)} ` +
+        `strokes in ${Math.round(tMed)}s.`,
+    });
+    consumed.add(idx);
+  });
+
   // --- relabel pass --------------------------------------------------------
   a.laps.forEach((lap) => {
     const first = lap.firstLengthIndex ?? -1;
@@ -182,6 +215,15 @@ export function detectProposals(
       if (dev > cfg.highConfidenceSigmas * majSd) continue;
       const own = b.byStroke.get(l.swimStroke);
       const hasOwnBaseline = !!own && own.strokes.n >= cfg.minGroupSamples;
+      if (hasOwnBaseline) {
+        // A length that fits its OWN stroke's baseline is not evidence of a
+        // mislabel — swimmers whose stroke counts overlap across strokes
+        // (e.g. breast ≈ free) would otherwise get every minority length
+        // falsely flagged just for resembling the majority.
+        const ownDev = Math.abs((l.totalStrokes ?? 0) - own.strokes.median);
+        const ownSd = Math.max(sigma(own.strokes), cfg.minStrokeSigma);
+        if (ownDev <= cfg.highConfidenceSigmas * ownSd) continue;
+      }
       const op: EditOp = { type: "relabel", lengthIndex: k, stroke: majority };
       proposals.push({
         id: opId(op), op,

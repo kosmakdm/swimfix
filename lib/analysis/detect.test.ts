@@ -142,7 +142,9 @@ describe("detectProposals — synthetic cases", () => {
     // sanity: the fragment at index 4 was in fact exercised by the fix path
     // (proves the assertions above aren't vacuously true over an empty list)
     const touchesFragment = props.some((p) =>
-      p.op.type === "relabel" ? p.op.lengthIndex === 4 : p.op.lengthIndexes.includes(4),
+      p.op.type === "relabel" || p.op.type === "split"
+        ? p.op.lengthIndex === 4
+        : p.op.lengthIndexes.includes(4),
     );
     expect(touchesFragment).toBe(true);
   });
@@ -162,6 +164,47 @@ describe("detectProposals — synthetic cases", () => {
     const props = detectProposals(a);
     expect(props.map((p) => p.id)).toEqual(["merge:8-9"]);
     expect(props[0].confidence).toBe("high");
+  });
+});
+
+describe("detectProposals — relabel own-baseline guard", () => {
+  it("does not relabel a minority stroke that fits its own baseline", () => {
+    // 8 freestyle + 4 genuine breaststroke; this swimmer's stroke counts
+    // overlap across strokes, so majority-band membership alone is not
+    // evidence of mislabeling — fitting your own stroke's baseline is.
+    const a = synth([
+      ...NORMAL,
+      { totalStrokes: 33, totalTimerTime: 83, swimStroke: "breaststroke" },
+      { totalStrokes: 34, totalTimerTime: 84, swimStroke: "breaststroke" },
+      { totalStrokes: 34, totalTimerTime: 82, swimStroke: "breaststroke" },
+      { totalStrokes: 34, totalTimerTime: 85, swimStroke: "breaststroke" },
+    ]);
+    expect(detectProposals(a).filter((p) => p.op.type === "relabel")).toEqual([]);
+  });
+});
+
+describe("detectProposals — missed-turn splits", () => {
+  it("proposes splitting a double-counted length (missed turn)", () => {
+    // ~2x the baseline in BOTH strokes and seconds: two lengths recorded as one
+    const a = synth([...NORMAL, { totalStrokes: 66, totalTimerTime: 165 }]);
+    const props = detectProposals(a);
+    const split = props.find((p) => p.op.type === "split");
+    expect(split).toBeDefined();
+    expect(split!.id).toBe("split:8");
+    expect(split!.op).toMatchObject({ type: "split", lengthIndex: 8, parts: 2 });
+    expect(split!.confidence).toBe("high");
+    expect(split!.reason).toMatch(/\d+/);
+  });
+
+  it("splits a triple-counted length into three", () => {
+    const a = synth([...NORMAL, { totalStrokes: 96, totalTimerTime: 246 }]);
+    const split = detectProposals(a).find((p) => p.op.type === "split");
+    expect(split?.op).toMatchObject({ type: "split", lengthIndex: 8, parts: 3 });
+  });
+
+  it("does not split a merely slow-but-normal length", () => {
+    const a = synth([...NORMAL, { totalStrokes: 44, totalTimerTime: 130 }]);
+    expect(detectProposals(a).filter((p) => p.op.type === "split")).toEqual([]);
   });
 });
 

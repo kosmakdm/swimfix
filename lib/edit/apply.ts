@@ -18,7 +18,8 @@ function round2(v: number): number {
 }
 
 export function lengthsTouched(op: EditOp): number[] {
-  return op.type === "relabel" ? [op.lengthIndex] : [...op.lengthIndexes];
+  if (op.type === "relabel" || op.type === "split") return [op.lengthIndex];
+  return [...op.lengthIndexes];
 }
 
 function lapOwnerOf(laps: LapData[], lengthIndex: number): number {
@@ -59,7 +60,50 @@ function validate(a: SwimActivity, ops: EditOp[]): void {
         throw new EditConflictError("Merged lengths must belong to the same lap.");
       }
     }
+    if (op.type === "split") {
+      if (!Number.isInteger(op.parts) || op.parts < 2) {
+        throw new EditConflictError("A split needs at least two parts.");
+      }
+      if (a.lengths[op.lengthIndex].lengthType !== "active") {
+        throw new EditConflictError("Only active lengths can be split.");
+      }
+    }
   }
+}
+
+/** Split one device-written length into `parts` equal pieces. Each piece
+ *  spreads the original so its field set and key order match the device
+ *  definition exactly (the Encoder scrambles same-set/different-order
+ *  objects — see mergedLength). Strokes and calories distribute with the
+ *  remainder going to the earliest parts. */
+function splitLength(l: LengthData, parts: number, poolLength: number): LengthData[] {
+  const timer = l.totalTimerTime / parts;
+  const elapsed = l.totalElapsedTime / parts;
+  const distribute = (total: number | undefined): Array<number | undefined> => {
+    if (total === undefined) return Array.from({ length: parts }, () => undefined);
+    const base = Math.floor(total / parts);
+    const extra = total % parts;
+    return Array.from({ length: parts }, (_, i) => base + (i < extra ? 1 : 0));
+  };
+  const strokes = distribute(l.totalStrokes);
+  const calories = distribute(l.totalCalories);
+  return Array.from({ length: parts }, (_, i) => {
+    const part: LengthData = {
+      ...l,
+      startTime: new Date(l.startTime.getTime() + i * elapsed * 1000),
+      totalElapsedTime: elapsed,
+      totalTimerTime: timer,
+      totalStrokes: strokes[i],
+      totalCalories: calories[i],
+      avgSpeed: timer > 0 ? Math.round((poolLength / timer) * 1000) / 1000 : undefined,
+      avgSwimmingCadence: timer > 0 && strokes[i] !== undefined
+        ? Math.round((strokes[i] as number) / (timer / 60))
+        : undefined,
+    };
+    if (part.totalStrokes === undefined) delete part.totalStrokes;
+    if (part.totalCalories === undefined) delete part.totalCalories;
+    return part;
+  });
 }
 
 function mergedLength(members: LengthData[], poolLength: number): LengthData {
@@ -105,12 +149,15 @@ export function applyEdits(a: SwimActivity, ops: EditOp[]): SwimActivity {
   const swallowed = new Set<number>();            // non-first merge members
   const toRest = new Set<number>();
   const relabel = new Map<number, SwimStroke>();
+  const splits = new Map<number, number>();       // index -> number of parts
   for (const op of ops) {
     if (op.type === "merge") {
       mergeStart.set(op.lengthIndexes[0], op.lengthIndexes);
       op.lengthIndexes.slice(1).forEach((i) => swallowed.add(i));
     } else if (op.type === "toRest") {
       op.lengthIndexes.forEach((i) => toRest.add(i));
+    } else if (op.type === "split") {
+      splits.set(op.lengthIndex, op.parts);
     } else {
       relabel.set(op.lengthIndex, op.stroke);
     }
@@ -118,9 +165,21 @@ export function applyEdits(a: SwimActivity, ops: EditOp[]): SwimActivity {
 
   const newLengths: LengthData[] = [];
   const oldToNew = new Array<number>(a.lengths.length).fill(-1);
+  const splitNew = new Map<number, number[]>(); // old index -> all part indexes
   a.lengths.forEach((l, oldIdx) => {
     if (swallowed.has(oldIdx)) {
       // maps to the merged length created at the merge's first index
+      return;
+    }
+    const parts = splits.get(oldIdx);
+    if (parts) {
+      const pieces = splitLength(l, parts, a.session.poolLength);
+      oldToNew[oldIdx] = newLengths.length;
+      splitNew.set(oldIdx, pieces.map((_, i) => newLengths.length + i));
+      for (const piece of pieces) {
+        piece.messageIndex = newLengths.length;
+        newLengths.push(piece);
+      }
       return;
     }
     let next: LengthData;
@@ -154,7 +213,9 @@ export function applyEdits(a: SwimActivity, ops: EditOp[]): SwimActivity {
     if (first < 0) return { ...lap };
     const newIdxs = n > 0
       ? [...new Set(
-          Array.from({ length: n }, (_, k) => oldToNew[first + k]).filter((i) => i >= 0),
+          Array.from({ length: n }, (_, k) => first + k).flatMap((oldIdx) =>
+            splitNew.get(oldIdx) ?? (oldToNew[oldIdx] >= 0 ? [oldToNew[oldIdx]] : []),
+          ),
         )].sort((x, y) => x - y)
       : [];
     const owned = newIdxs.map((i) => newLengths[i]);

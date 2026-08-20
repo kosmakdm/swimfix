@@ -68,6 +68,62 @@ describe("applyEdits on the real swim with the golden proposals", () => {
   });
 });
 
+describe("applyEdits — split op (missed turns)", () => {
+  const a = decodeSwimFit(bytes);
+  // length 0: freestyle, 28 strokes, 62.687 s, owned by lap 0 (with length 1)
+  const out = applyEdits(a, [{ type: "split", lengthIndex: 0, parts: 2 }]);
+
+  it("replaces one length with two contiguous halves", () => {
+    expect(out.lengths).toHaveLength(44);
+    const [p1, p2] = [out.lengths[0], out.lengths[1]];
+    expect(p1.totalStrokes).toBe(14);
+    expect(p2.totalStrokes).toBe(14);
+    expect(p1.totalTimerTime).toBeCloseTo(62.687 / 2, 3);
+    expect(p2.totalTimerTime).toBeCloseTo(62.687 / 2, 3);
+    expect(p1.swimStroke).toBe("freestyle");
+    expect(p2.swimStroke).toBe("freestyle");
+    expect(p1.lengthType).toBe("active");
+    expect(p2.lengthType).toBe("active");
+    expect(p1.startTime).toEqual(a.lengths[0].startTime);
+    expect(p2.startTime.getTime()).toBeCloseTo(
+      a.lengths[0].startTime.getTime() + (a.lengths[0].totalElapsedTime / 2) * 1000, -2);
+    expect(p1.avgSpeed).toBeCloseTo(50 / (62.687 / 2), 3);
+    out.lengths.forEach((l, i) => expect(l.messageIndex).toBe(i));
+  });
+
+  it("distributes odd strokes deterministically (first part gets the extra)", () => {
+    // length 5: freestyle, 33 strokes
+    const odd = applyEdits(a, [{ type: "split", lengthIndex: 5, parts: 2 }]);
+    expect(odd.lengths[5].totalStrokes).toBe(17);
+    expect(odd.lengths[6].totalStrokes).toBe(16);
+  });
+
+  it("recomputes the owning lap and shifts later laps", () => {
+    expect(out.laps[0]).toMatchObject({
+      numLengths: 3, numActiveLengths: 3, totalDistance: 150, totalStrokes: 62,
+    });
+    expect(out.laps[1].firstLengthIndex).toBe(3); // was 2
+  });
+
+  it("recomputes the session (+50 m)", () => {
+    expect(out.session.totalDistance).toBe(1350);
+    expect(out.session.numActiveLengths).toBe(27);
+    expect(out.session.totalStrokes).toBe(731);   // strokes conserved
+    expect(out.session.numLengths).toBe(28);      // was 27, one length added
+  });
+
+  it("rejects invalid splits", () => {
+    expect(() => applyEdits(a, [{ type: "split", lengthIndex: 0, parts: 1 }]))
+      .toThrow(EditConflictError);
+    expect(() => applyEdits(a, [{ type: "split", lengthIndex: 2, parts: 2 }]))
+      .toThrow(EditConflictError); // length 2 is idle
+    expect(() => applyEdits(a, [
+      { type: "split", lengthIndex: 6, parts: 2 },
+      { type: "merge", lengthIndexes: [6, 7] },
+    ])).toThrow(EditConflictError); // overlap
+  });
+});
+
 describe("applyEdits — other ops and validation", () => {
   const a = decodeSwimFit(bytes);
 

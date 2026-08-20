@@ -17,6 +17,8 @@ export interface DetectConfig {
   minStrokeSigma: number;
   /** Floor for duration σ (seconds), same reason. */
   minSecondsSigma: number;
+  /** Length is a missed-turn candidate when strokes AND seconds ≥ ratio × median. */
+  splitRatio: number;
 }
 
 export const DEFAULT_CONFIG: DetectConfig = {
@@ -29,4 +31,5 @@ export const DEFAULT_CONFIG: DetectConfig = {
   minLapActives: 3,
   minStrokeSigma: 1,
   minSecondsSigma: 2,
+  splitRatio: 1.7,
 };
