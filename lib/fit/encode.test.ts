@@ -98,6 +98,24 @@ describe("encodeSwimFit with a non-metric (yard) pool length", () => {
   });
 });
 
+describe("split lengths round-trip through encoding", () => {
+  it("both halves survive encode→decode value-exact", () => {
+    const a = decodeSwimFit(bytes);
+    const edited = applyEdits(a, [{ type: "split", lengthIndex: 0, parts: 2 }]);
+    const back = decodeSwimFit(encodeSwimFit(edited));
+    expect(validateExport(encodeSwimFit(edited), edited)).toEqual({ ok: true, problems: [] });
+    expect(back.lengths).toHaveLength(44);
+    expect(back.session.totalDistance).toBe(1350);
+    for (const i of [0, 1]) {
+      expect(back.lengths[i].totalStrokes).toBe(14);
+      expect(back.lengths[i].totalTimerTime).toBeCloseTo(31.343, 2);
+      expect((back.lengths[i] as { avgSpeed?: number }).avgSpeed).toBeCloseTo(1.595, 3);
+      expect(back.lengths[i].swimStroke).toBe("freestyle");
+    }
+    back.lengths.forEach((l, i) => expect(l.messageIndex).toBe(i));
+  });
+});
+
 describe("devices that emit vendor-only messages (e.g. Venu 3S training_settings)", () => {
   it("skips raw messages that decoded to an empty object instead of crashing", () => {
     const a = decodeSwimFit(bytes);

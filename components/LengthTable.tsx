@@ -61,6 +61,12 @@ export default function LengthTable({
             title={blocked.has(selected) ? blockTitle : manualTouched.has(selected) ? manualTitle : "Count this as rest instead of a length"}
             onClick={() => onManualOp({ type: "toRest", lengthIndexes: [selected] })}
           >Convert to rest</button>
+          <button
+            className="action"
+            disabled={sel.lengthType !== "active" || blocked.has(selected) || manualTouched.has(selected)}
+            title={blocked.has(selected) ? blockTitle : manualTouched.has(selected) ? manualTitle : "The watch missed a turn — count this as two lengths"}
+            onClick={() => onManualOp({ type: "split", lengthIndex: selected, parts: 2 })}
+          >Split in 2</button>
           <select
             className="action"
             disabled={sel.lengthType !== "active" || blocked.has(selected) || manualTouched.has(selected)}
